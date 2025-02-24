@@ -34,3 +34,12 @@ INSERT INTO group_types (name) VALUES
     ('personal'),
     ('group')
 ON CONFLICT (name) DO NOTHING;
+
+CREATE TABLE IF NOT EXISTS messages (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER NOT NULL,
+    group_id INTEGER NOT NULL,
+    content TEXT NOT NULL,
+    CONSTRAINT fk_message_user FOREIGN KEY (user_id, group_id) REFERENCES group_members(user_id, group_id),
+    CONSTRAINT fk_message_group FOREIGN KEY (group_id) REFERENCES groups(id)
+);

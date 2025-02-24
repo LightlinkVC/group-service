@@ -1,17 +1,20 @@
 package dto
 
-import "github.com/lightlink/group-service/internal/group/domain/entity"
+import (
+	"fmt"
 
-type CreateGroupRequest struct {
-	UserID    uint   `json:"user_id"`
-	GroupName string `json:"group_name"`
-	Type      string `json:"group_type"`
+	"github.com/lightlink/group-service/internal/group/domain/entity"
+	proto "github.com/lightlink/group-service/protogen/group"
+)
+
+type GetPersonalGroupIDResponse struct {
+	GroupID uint `json:"group_id"`
 }
 
-func CreateGroupRequestToEntity(createRequest *CreateGroupRequest) *entity.Group {
+func CreatePersonalGroupRequestToEntity(createRequest *proto.CreatePersonalGroupRequest) *entity.Group {
 	return &entity.Group{
-		Name:      createRequest.GroupName,
-		CreatorID: createRequest.UserID,
-		TypeName:  createRequest.Type,
+		Name:      fmt.Sprintf("personal-%d-%d", createRequest.User1Id, createRequest.User2Id),
+		CreatorID: uint(createRequest.User1Id),
+		TypeName:  "personal",
 	}
 }
