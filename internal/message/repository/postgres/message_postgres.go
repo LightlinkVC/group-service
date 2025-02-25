@@ -61,6 +61,7 @@ func (repo *MessagePostgresRepository) GetByGroupID(groupID uint) ([]entity.Mess
 	for rows.Next() {
 		currentGroupMessage := entity.Message{}
 		err := rows.Scan(
+			&currentGroupMessage.ID,
 			&currentGroupMessage.UserID,
 			&currentGroupMessage.GroupID,
 			&currentGroupMessage.Content,
