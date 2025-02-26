@@ -4,9 +4,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"strconv"
 
+	"github.com/centrifugal/centrifuge"
 	"github.com/gorilla/mux"
 	"github.com/lightlink/group-service/internal/message/domain/dto"
 	"github.com/lightlink/group-service/internal/message/usecase"
@@ -14,11 +16,13 @@ import (
 
 type MessageHandler struct {
 	messageUC usecase.MessageUsecaseI
+	node      *centrifuge.Node
 }
 
-func NewMessageHandler(messageUC usecase.MessageUsecaseI) *MessageHandler {
+func NewMessageHandler(messageUC usecase.MessageUsecaseI, node *centrifuge.Node) *MessageHandler {
 	return &MessageHandler{
 		messageUC: messageUC,
+		node:      node,
 	}
 }
 
@@ -55,11 +59,26 @@ func (h *MessageHandler) SendMessage(w http.ResponseWriter, r *http.Request) {
 	userID := uint(userID64)
 	createMessageRequest.UserID = userID
 
-	err = h.messageUC.Create(createMessageRequest)
+	createdMessage, err := h.messageUC.Create(createMessageRequest)
 	if err != nil {
 		/*Handle*/
 		fmt.Println("failed create message")
 		return
+	}
+
+	response, err := json.Marshal(createdMessage)
+	if err != nil {
+		/*Handle*/
+		fmt.Println(err)
+		return
+	}
+
+	_, err = h.node.Publish(
+		fmt.Sprintf("group:%d", createMessageRequest.GroupID),
+		response,
+	)
+	if err != nil {
+		log.Printf("Error publishing message: %v", err)
 	}
 
 	w.WriteHeader(http.StatusOK)

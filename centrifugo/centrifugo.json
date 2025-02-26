@@ -1,0 +1,9 @@
+{
+  "allowed_origins": [
+    "http://localhost:5173"
+  ],
+  "websocket": {
+    "enabled": true,
+    "port": 8000
+  }
+}

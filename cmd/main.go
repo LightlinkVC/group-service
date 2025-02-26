@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 
+	"github.com/centrifugal/centrifuge"
 	"github.com/gorilla/mux"
 	_ "github.com/lib/pq"
 
@@ -18,6 +19,7 @@ import (
 	httpMessageDelivery "github.com/lightlink/group-service/internal/message/delivery/http"
 	messageRepository "github.com/lightlink/group-service/internal/message/repository/postgres"
 	messageUsecase "github.com/lightlink/group-service/internal/message/usecase"
+	"github.com/lightlink/group-service/internal/middleware"
 	proto "github.com/lightlink/group-service/protogen/group"
 	"google.golang.org/grpc"
 )
@@ -58,6 +60,10 @@ func startGRPC() {
 	log.Fatal(grpcServer.Serve(listener))
 }
 
+func isValidGroupChannel(channel string) bool {
+	return len(channel) > 6 && channel[:6] == "group:"
+}
+
 func startHTTP() {
 	postgresConnect, err := connectToDB()
 	if err != nil {
@@ -69,6 +75,28 @@ func startHTTP() {
 		}
 	}()
 
+	node, err := centrifuge.New(centrifuge.Config{})
+	if err := node.Run(); err != nil {
+		panic(err)
+	}
+
+	node.OnConnect(func(client *centrifuge.Client) {
+		client.OnSubscribe(func(e centrifuge.SubscribeEvent, cb centrifuge.SubscribeCallback) {
+			if !isValidGroupChannel(e.Channel) {
+				fmt.Println("Invalid channel: ", e.Channel)
+				cb(centrifuge.SubscribeReply{}, centrifuge.ErrorPermissionDenied)
+				return
+			}
+
+			cb(centrifuge.SubscribeReply{
+				Options: centrifuge.SubscribeOptions{
+					EmitPresence:  true,
+					EmitJoinLeave: true,
+				},
+			}, nil)
+		})
+	})
+
 	groupRepository := groupRepository.NewGroupPostgresRepository(postgresConnect)
 	messageRepository := messageRepository.NewMessagePostgresRepository(postgresConnect)
 
@@ -76,9 +104,17 @@ func startHTTP() {
 	messageUsecase := messageUsecase.NewMessageUsecase(messageRepository)
 
 	groupHandler := httpGroupDelivery.NewGroupHandler(groupUsecase)
-	messageHandler := httpMessageDelivery.NewMessageHandler(messageUsecase)
+	messageHandler := httpMessageDelivery.NewMessageHandler(messageUsecase, node)
 
 	router := mux.NewRouter()
+
+	/*TODO решить проблему с CORS*/
+	wsHandler := centrifuge.NewWebsocketHandler(node, centrifuge.WebsocketConfig{
+		CheckOrigin: func(r *http.Request) bool {
+			return true
+		},
+	})
+	router.Handle("/connection/websocket", middleware.ValidateAuthWS(wsHandler))
 
 	router.HandleFunc("/api/get-group-id/{friendID}", groupHandler.GetPersonalGroupID).Methods("GET")
 

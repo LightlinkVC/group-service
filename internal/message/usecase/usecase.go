@@ -7,7 +7,7 @@ import (
 )
 
 type MessageUsecaseI interface {
-	Create(createRequest *dto.CreateMessageRequest) error
+	Create(createRequest *dto.CreateMessageRequest) (*entity.Message, error)
 	GetByGroupID(groupID uint) ([]entity.Message, error)
 }
 
@@ -21,19 +21,21 @@ func NewMessageUsecase(messageRepo repository.MessageRepositoryI) *MessageUsecas
 	}
 }
 
-func (uc *MessageUsecase) Create(createRequest *dto.CreateMessageRequest) error {
+func (uc *MessageUsecase) Create(createRequest *dto.CreateMessageRequest) (*entity.Message, error) {
 	messageEntity := entity.Message{
 		UserID:  createRequest.UserID,
 		GroupID: createRequest.GroupID,
 		Content: createRequest.Content,
 	}
 
-	_, err := uc.messageRepo.Create(&messageEntity)
+	createdMessageModel, err := uc.messageRepo.Create(&messageEntity)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	return nil
+	createdMessageEntity := dto.MessageModelToEntity(createdMessageModel)
+
+	return createdMessageEntity, nil
 }
 
 func (uc *MessageUsecase) GetByGroupID(groupID uint) ([]entity.Message, error) {
