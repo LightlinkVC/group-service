@@ -1,9 +1,26 @@
 {
-  "allowed_origins": [
-    "http://localhost:5173"
-  ],
-  "websocket": {
-    "enabled": true,
-    "port": 8000
+  "log" : {
+    "level": "debug"
+  },
+  "admin": {
+    "enabled": true
+  },
+  "client": {
+    "allowed_origins": ["http://localhost:5173", "http://192.168.1.68:5173"]
+  },
+  "channel": {
+    "namespaces": [
+      {
+        "name": "room",
+        "presence": true,
+        "allow_publish_for_subscriber": true
+
+      },
+      {
+        "name": "group",
+        "presence": true,
+        "allow_publish_for_subscriber": true
+      }
+    ]
   }
 }
