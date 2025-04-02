@@ -14,12 +14,15 @@
         "name": "room",
         "presence": true,
         "allow_publish_for_subscriber": true
-
       },
       {
         "name": "group",
         "presence": true,
         "allow_publish_for_subscriber": true
+      },
+      {
+        "name": "personal",
+        "presence": true
       }
     ]
   }
