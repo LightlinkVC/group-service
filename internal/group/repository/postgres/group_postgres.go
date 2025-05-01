@@ -39,6 +39,33 @@ func (repo *GroupPostgresRepository) GetPersonalGroupID(user1ID uint, user2ID ui
 	return groupID, nil
 }
 
+func (repo *GroupPostgresRepository) GetMemberIDsByGroupID(groupID uint) ([]uint, error) {
+	var memberIDs []uint
+
+	rows, err := repo.DB.Query(
+		"SELECT user_id FROM group_members WHERE group_id = $1",
+		groupID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query group members: %w", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var userID uint
+		if err := rows.Scan(&userID); err != nil {
+			return nil, fmt.Errorf("failed to scan user ID: %w", err)
+		}
+		memberIDs = append(memberIDs, userID)
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating over rows: %w", err)
+	}
+
+	return memberIDs, nil
+}
+
 func (repo *GroupPostgresRepository) Create(groupEntity *entity.Group, groupMembers []entity.GroupMember) (*model.Group, error) {
 	createdGroupModel := &model.Group{}
 	var groupTypeID uint
