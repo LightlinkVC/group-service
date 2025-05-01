@@ -4,7 +4,7 @@ LABEL stage=gobuilder
 ENV CGO_ENABLED 0
 ENV GOOS linux
 
-RUN apk update --no-cache && apk add --no-cache tzdata
+RUN apk update --no-cache && apk add --no-cache tzdata gcc libc-dev
 
 WORKDIR /build
 
@@ -15,7 +15,7 @@ RUN go mod download
 
 COPY . .
 
-RUN go build -ldflags="-s -w" -o /build/bin/main ./cmd/
+RUN CGO_ENABLED=1 go build -tags musl -ldflags="-s -w" -o /build/bin/main ./cmd/
 
 FROM alpine
 

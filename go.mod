@@ -17,10 +17,14 @@ require (
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/centrifugal/protocol v0.16.0 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
+	github.com/confluentinc/confluent-kafka-go/v2 v2.8.0 // indirect
 	github.com/dolthub/maphash v0.1.0 // indirect
 	github.com/gammazero/deque v0.2.1 // indirect
+	github.com/golang/snappy v1.0.0 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/josharian/intern v1.0.0 // indirect
+	github.com/linkedin/goavro v2.1.0+incompatible // indirect
+	github.com/linkedin/goavro/v2 v2.13.1 // indirect
 	github.com/mailru/easyjson v0.7.7 // indirect
 	github.com/maypok86/otter v1.2.4 // indirect
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
@@ -30,6 +34,8 @@ require (
 	github.com/prometheus/common v0.55.0 // indirect
 	github.com/prometheus/procfs v0.15.1 // indirect
 	github.com/redis/rueidis v1.0.54 // indirect
+	github.com/riferrei/srclient v0.7.2 // indirect
+	github.com/santhosh-tekuri/jsonschema/v5 v5.3.0 // indirect
 	github.com/segmentio/asm v1.2.0 // indirect
 	github.com/segmentio/encoding v0.4.1 // indirect
 	github.com/shadowspore/fossil-delta v0.0.0-20241213113458-1d797d70cbe3 // indirect

@@ -20,6 +20,7 @@ import (
 	messageRepository "github.com/lightlink/group-service/internal/message/repository/postgres"
 	messageUsecase "github.com/lightlink/group-service/internal/message/usecase"
 	"github.com/lightlink/group-service/internal/middleware"
+	notificationRepository "github.com/lightlink/group-service/internal/notification/repository/kafka"
 	proto "github.com/lightlink/group-service/protogen/group"
 	"google.golang.org/grpc"
 )
@@ -99,9 +100,18 @@ func startHTTP() {
 
 	groupRepository := groupRepository.NewGroupPostgresRepository(postgresConnect)
 	messageRepository := messageRepository.NewMessagePostgresRepository(postgresConnect)
+	notificationRepository, err := notificationRepository.NewNotificationKafkaRepository(
+		"kafka:29092",
+		// "notification-group",
+		"notifications",
+		"http://schema_registry:9091",
+	)
+	if err != nil {
+		panic(err)
+	}
 
 	groupUsecase := groupUsecase.NewGroupUsecase(groupRepository)
-	messageUsecase := messageUsecase.NewMessageUsecase(messageRepository)
+	messageUsecase := messageUsecase.NewMessageUsecase(messageRepository, notificationRepository, groupRepository)
 
 	groupHandler := httpGroupDelivery.NewGroupHandler(groupUsecase)
 	messageHandler := httpMessageDelivery.NewMessageHandler(messageUsecase, node)
