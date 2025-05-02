@@ -112,6 +112,7 @@ func (repo *NotificationKafkaRepository) Send(notification dto.RawNotification) 
 
 	fmt.Printf("KAFKA: Send value in queue: type-%s, payload-%v\n", notification.Type, payload)
 
+	/*TODO: Remove in constructor*/
 	go func() {
 		for e := range repo.producer.Events() {
 			switch ev := e.(type) {
