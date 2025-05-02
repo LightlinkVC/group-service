@@ -1,6 +1,7 @@
 package usecase
 
 import (
+	"fmt"
 	"log"
 	"strconv"
 
@@ -15,23 +16,39 @@ import (
 type MessageUsecaseI interface {
 	Create(createRequest *messageDTO.CreateMessageRequest) (*entity.Message, error)
 	GetByGroupID(groupID uint) ([]entity.Message, error)
+	UpdateHateSpeechLabel(hateSpeechResponse messageDTO.MessageHateSpeechResponse)
 }
 
 type MessageUsecase struct {
-	messageRepo      messageRepo.MessageRepositoryI
-	groupRepo        groupRepo.GroupRepositoryI
-	notificationRepo notificationRepo.NotificationRepositoryI
+	messageRepo           messageRepo.MessageRepositoryI
+	groupRepo             groupRepo.GroupRepositoryI
+	notificationRepo      notificationRepo.NotificationRepositoryI
+	messageHateSpeechRepo messageRepo.MessageHateSpeechRepositoryI
 }
 
 func NewMessageUsecase(
 	messageRepo messageRepo.MessageRepositoryI,
 	notificationRepo notificationRepo.NotificationRepositoryI,
 	groupRepo groupRepo.GroupRepositoryI,
+	messageHateSpeechRepo messageRepo.MessageHateSpeechRepositoryI,
 ) *MessageUsecase {
 	return &MessageUsecase{
-		messageRepo:      messageRepo,
-		notificationRepo: notificationRepo,
-		groupRepo:        groupRepo,
+		messageRepo:           messageRepo,
+		notificationRepo:      notificationRepo,
+		groupRepo:             groupRepo,
+		messageHateSpeechRepo: messageHateSpeechRepo,
+	}
+}
+
+func (uc *MessageUsecase) initiateHateSpeechCheck(messageID uint, content string) {
+	hateSpeechRequest := messageDTO.MessageHateSpeechRequest{
+		ID:      messageID,
+		Content: content,
+	}
+
+	err := uc.messageHateSpeechRepo.Send(hateSpeechRequest)
+	if err != nil {
+		log.Printf("ERR: An error occured sending message in hate-speech-service: %v\n", err)
 	}
 }
 
@@ -65,18 +82,18 @@ func (uc *MessageUsecase) Create(createRequest *messageDTO.CreateMessageRequest)
 		Content: createRequest.Content,
 	}
 
-	createdMessageModel, err := uc.messageRepo.Create(&messageEntity)
+	createdMessageEntity, err := uc.messageRepo.Create(&messageEntity)
 	if err != nil {
 		return nil, err
 	}
 
 	go uc.sendIncomingMessageNotification(
-		messageEntity.UserID,
-		messageEntity.GroupID,
-		messageEntity.Content,
+		createdMessageEntity.UserID,
+		createdMessageEntity.GroupID,
+		createdMessageEntity.Content,
 	)
 
-	createdMessageEntity := messageDTO.MessageModelToEntity(createdMessageModel)
+	go uc.initiateHateSpeechCheck(createdMessageEntity.ID, createdMessageEntity.Content)
 
 	return createdMessageEntity, nil
 }
@@ -88,4 +105,18 @@ func (uc *MessageUsecase) GetByGroupID(groupID uint) ([]entity.Message, error) {
 	}
 
 	return messages, nil
+}
+
+func (uc *MessageUsecase) UpdateHateSpeechLabel(hateSpeechResponse messageDTO.MessageHateSpeechResponse) {
+	var newStatus string
+	if hateSpeechResponse.IsHateSpeech {
+		newStatus = "hate"
+	} else {
+		newStatus = "neutral"
+	}
+
+	err := uc.messageRepo.UpdateStatus(hateSpeechResponse.ID, newStatus)
+	if err != nil {
+		fmt.Printf("Failed to update status for message %d: %v\n", hateSpeechResponse.ID, err)
+	}
 }

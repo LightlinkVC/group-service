@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 	"github.com/lightlink/group-service/internal/message/domain/entity"
-	"github.com/lightlink/group-service/internal/message/domain/model"
 )
 
 type MessagePostgresRepository struct {
@@ -18,32 +17,47 @@ func NewMessagePostgresRepository(db *sql.DB) *MessagePostgresRepository {
 	}
 }
 
-func (repo *MessagePostgresRepository) Create(messageEntity *entity.Message) (*model.Message, error) {
-	createdMessageModel := model.Message{}
+func (repo *MessagePostgresRepository) Create(messageEntity *entity.Message) (*entity.Message, error) {
+	createdMessageEntity := entity.Message{}
 
-	err := repo.DB.QueryRow(
-		`INSERT INTO messages (user_id, group_id, content) 
-		VALUES ($1, $2, $3) 
-		RETURNING id, user_id, group_id, content`,
+	var messageID uint
+	err := repo.DB.QueryRow(`
+		INSERT INTO messages (user_id, group_id, content, status_id)
+		VALUES ($1, $2, $3, (SELECT id FROM message_statuses WHERE name = 'pending'))
+		RETURNING id`,
 		messageEntity.UserID, messageEntity.GroupID, messageEntity.Content,
-	).Scan(
-		&createdMessageModel.ID,
-		&createdMessageModel.UserID,
-		&createdMessageModel.GroupID,
-		&createdMessageModel.Content,
-	)
+	).Scan(&messageID)
 	if err != nil {
 		fmt.Println("Create message err")
 		return nil, err
 	}
 
-	return &createdMessageModel, nil
+	err = repo.DB.QueryRow(`
+		SELECT m.id, m.user_id, m.group_id, ms.name, m.content
+		FROM messages m
+		JOIN message_statuses ms ON m.status_id = ms.id
+		WHERE m.id = $1`,
+		messageID,
+	).Scan(
+		&createdMessageEntity.ID,
+		&createdMessageEntity.UserID,
+		&createdMessageEntity.GroupID,
+		&createdMessageEntity.Status,
+		&createdMessageEntity.Content,
+	)
+	if err != nil {
+		fmt.Println("Parse created message error")
+		return nil, err
+	}
+
+	return &createdMessageEntity, nil
 }
 
 func (repo *MessagePostgresRepository) GetByGroupID(groupID uint) ([]entity.Message, error) {
 	rows, err := repo.DB.Query(
-		`SELECT id, user_id, group_id, content
+		`SELECT m.id, m.user_id, m.group_id, ms.name, m.content
 		FROM messages m
+		JOIN message_statuses ms ON m.status_id = ms.id
 		WHERE m.group_id = $1`,
 		groupID,
 	)
@@ -64,6 +78,7 @@ func (repo *MessagePostgresRepository) GetByGroupID(groupID uint) ([]entity.Mess
 			&currentGroupMessage.ID,
 			&currentGroupMessage.UserID,
 			&currentGroupMessage.GroupID,
+			&currentGroupMessage.Status,
 			&currentGroupMessage.Content,
 		)
 		if err != nil {
@@ -75,4 +90,19 @@ func (repo *MessagePostgresRepository) GetByGroupID(groupID uint) ([]entity.Mess
 	}
 
 	return groupMessages, nil
+}
+
+func (repo *MessagePostgresRepository) UpdateStatus(messageID uint, statusName string) error {
+	_, err := repo.DB.Exec(`
+		UPDATE messages 
+		SET status_id = (SELECT id FROM message_statuses WHERE name = $1)
+		WHERE id = $2
+	`, statusName, messageID)
+
+	if err != nil {
+		fmt.Printf("Failed to update message status: %v\n", err)
+		return err
+	}
+
+	return nil
 }

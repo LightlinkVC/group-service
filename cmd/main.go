@@ -17,6 +17,8 @@ import (
 	groupRepository "github.com/lightlink/group-service/internal/group/repository/postgres"
 	groupUsecase "github.com/lightlink/group-service/internal/group/usecase"
 	httpMessageDelivery "github.com/lightlink/group-service/internal/message/delivery/http"
+	kafkaMessageFilterDelivery "github.com/lightlink/group-service/internal/message/delivery/kafka"
+	messageHateSpeechRepository "github.com/lightlink/group-service/internal/message/repository/kafka"
 	messageRepository "github.com/lightlink/group-service/internal/message/repository/postgres"
 	messageUsecase "github.com/lightlink/group-service/internal/message/usecase"
 	"github.com/lightlink/group-service/internal/middleware"
@@ -100,9 +102,15 @@ func startHTTP() {
 
 	groupRepository := groupRepository.NewGroupPostgresRepository(postgresConnect)
 	messageRepository := messageRepository.NewMessagePostgresRepository(postgresConnect)
+	messageHateSpeechRepository, err := messageHateSpeechRepository.NewMessageHateSpeechRepository(
+		"kafka:29092",
+		"input_hate_speech",
+	)
+	if err != nil {
+		panic(err)
+	}
 	notificationRepository, err := notificationRepository.NewNotificationKafkaRepository(
 		"kafka:29092",
-		// "notification-group",
 		"notifications",
 		"http://schema_registry:9091",
 	)
@@ -111,10 +119,27 @@ func startHTTP() {
 	}
 
 	groupUsecase := groupUsecase.NewGroupUsecase(groupRepository)
-	messageUsecase := messageUsecase.NewMessageUsecase(messageRepository, notificationRepository, groupRepository)
+	messageUsecase := messageUsecase.NewMessageUsecase(
+		messageRepository,
+		notificationRepository,
+		groupRepository,
+		messageHateSpeechRepository,
+	)
 
 	groupHandler := httpGroupDelivery.NewGroupHandler(groupUsecase)
 	messageHandler := httpMessageDelivery.NewMessageHandler(messageUsecase, node)
+
+	messageFilterConsumer, err := kafkaMessageFilterDelivery.NewMessageFilterConsumer(
+		messageUsecase,
+		"kafka:29092",
+		"hate-speech-group",
+		"output_hate_speech",
+	)
+	if err != nil {
+		panic(err)
+	}
+
+	go messageFilterConsumer.Receive()
 
 	router := mux.NewRouter()
 
