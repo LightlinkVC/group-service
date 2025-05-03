@@ -67,6 +67,19 @@ func NewNotificationKafkaRepository(brokers, topic, schemaRegistryURL string) (*
 		return nil, fmt.Errorf("ошибка создания Avro-кодека: %v", err)
 	}
 
+	go func() {
+		for e := range producer.Events() {
+			switch ev := e.(type) {
+			case *kafka.Message:
+				if ev.TopicPartition.Error != nil {
+					log.Printf("Ошибка продюсинга: %v\n", ev.TopicPartition)
+				} else {
+					log.Printf("Сообщение отправлено в %v\n", ev.TopicPartition)
+				}
+			}
+		}
+	}()
+
 	return &NotificationKafkaRepository{
 		producer: producer,
 		codec:    codec,
@@ -111,20 +124,6 @@ func (repo *NotificationKafkaRepository) Send(notification dto.RawNotification) 
 	}
 
 	fmt.Printf("KAFKA: Send value in queue: type-%s, payload-%v\n", notification.Type, payload)
-
-	/*TODO: Remove in constructor*/
-	go func() {
-		for e := range repo.producer.Events() {
-			switch ev := e.(type) {
-			case *kafka.Message:
-				if ev.TopicPartition.Error != nil {
-					log.Printf("Ошибка продюсинга: %v\n", ev.TopicPartition)
-				} else {
-					log.Printf("Сообщение отправлено в %v\n", ev.TopicPartition)
-				}
-			}
-		}
-	}()
 
 	return nil
 }
