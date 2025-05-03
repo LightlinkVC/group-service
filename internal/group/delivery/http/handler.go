@@ -4,10 +4,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
 	"strconv"
+	"time"
 
+	"github.com/dgrijalva/jwt-go"
 	"github.com/gorilla/mux"
 	"github.com/lightlink/group-service/internal/group/domain/dto"
+	"github.com/lightlink/group-service/internal/group/domain/entity"
 	"github.com/lightlink/group-service/internal/group/usecase"
 )
 
@@ -19,6 +23,43 @@ func NewGroupHandler(groupUsecase usecase.GroupUsecaseI) *GroupHandler {
 	return &GroupHandler{
 		groupUC: groupUsecase,
 	}
+}
+
+func generateUserToken(secret, userID, roomID string) (string, error) {
+	claims := jwt.MapClaims{
+		"sub": userID,
+		/*TODO Fix time*/
+		"exp": time.Now().Add(time.Hour * 10).Unix(),
+		"channels": []string{
+			entity.RoomChannel(roomID),
+			entity.UserChannel(roomID, userID),
+			entity.GroupChannel(roomID),
+		},
+	}
+
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	return token.SignedString([]byte(secret))
+}
+
+func (h *GroupHandler) InfoHandler(w http.ResponseWriter, r *http.Request) {
+	fmt.Println("Handling incoming info request")
+	userIDString := r.Header.Get("X-User-ID")
+	groupID := mux.Vars(r)["groupID"]
+
+	token, err := generateUserToken(os.Getenv("TOKEN_KEY"), userIDString, groupID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"token": token,
+		"channels": map[string]string{
+			"room":           entity.RoomChannel(groupID),
+			"group_messages": entity.GroupChannel(groupID),
+			"user":           entity.UserChannel(groupID, userIDString),
+		},
+	})
 }
 
 func (h *GroupHandler) GetPersonalGroupID(w http.ResponseWriter, r *http.Request) {

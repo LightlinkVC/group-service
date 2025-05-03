@@ -5,9 +5,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strconv"
 	"time"
 
-	"github.com/lightlink/group-service/internal/message/domain/entity"
+	groupEntity "github.com/lightlink/group-service/internal/group/domain/entity"
 )
 
 type PublishResponse struct {
@@ -84,5 +85,6 @@ func (c *CentrifugoClient) Publish(channel string, data interface{}) error {
 }
 
 func (c *CentrifugoClient) PublishToGroup(groupID uint, data interface{}) error {
-	return c.Publish(entity.GroupChannel(groupID), data)
+	groupIDString := strconv.FormatUint(uint64(groupID), 10)
+	return c.Publish(groupEntity.GroupChannel(groupIDString), data)
 }

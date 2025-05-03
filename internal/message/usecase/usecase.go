@@ -1,7 +1,6 @@
 package usecase
 
 import (
-	"encoding/json"
 	"fmt"
 	"log"
 	"strconv"
@@ -98,9 +97,12 @@ func (uc *MessageUsecase) Create(createRequest *messageDTO.CreateMessageRequest)
 		return nil, err
 	}
 
-	messagePayload, err := json.Marshal(createdMessageEntity)
-	if err != nil {
-		return nil, err
+	messagePayload := messageDTO.IncomingMessagePayload{
+		ID:      createdMessageEntity.ID,
+		UserID:  createdMessageEntity.UserID,
+		GroupID: createdMessageEntity.GroupID,
+		Status:  createdMessageEntity.Status,
+		Content: createRequest.Content,
 	}
 
 	go uc.sendIncomingMessageNotification(
@@ -115,7 +117,13 @@ func (uc *MessageUsecase) Create(createRequest *messageDTO.CreateMessageRequest)
 		createdMessageEntity.Content,
 	)
 
-	uc.messagingServer.PublishToGroup(createdMessageEntity.GroupID, messagePayload)
+	uc.messagingServer.PublishToGroup(
+		createdMessageEntity.GroupID,
+		messageDTO.MessageSignal{
+			Type:    "newMessage",
+			Payload: messagePayload,
+		},
+	)
 
 	return createdMessageEntity, nil
 }
@@ -143,5 +151,19 @@ func (uc *MessageUsecase) UpdateHateSpeechLabel(hateSpeechResponse messageDTO.Me
 		return
 	}
 
-	// uc.messagingServer.PublishToGroup()
+	if newStatus != HATE_MESSAGE_STATUS {
+		return
+	}
+
+	hateMessagecknowledgementPayload := messageDTO.HateSpeechStatusAckPayload{
+		MessageID: hateSpeechResponse.ID,
+	}
+	fmt.Printf("Sending message hate status %d\n", hateSpeechResponse.ID)
+	go uc.messagingServer.PublishToGroup(
+		hateSpeechResponse.GroupID,
+		messageDTO.MessageSignal{
+			Type:    "hateUpdate",
+			Payload: hateMessagecknowledgementPayload,
+		},
+	)
 }

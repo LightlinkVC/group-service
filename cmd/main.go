@@ -124,6 +124,7 @@ func startHTTP() {
 
 	router := mux.NewRouter()
 
+	router.HandleFunc("/api/group/{groupID}/info", groupHandler.InfoHandler).Methods("GET")
 	router.HandleFunc("/api/get-group-id/{friendID}", groupHandler.GetPersonalGroupID).Methods("GET")
 
 	router.HandleFunc("/api/messages/{groupID}", messageHandler.GetGroupMessages).Methods("GET")
