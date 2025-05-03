@@ -1,16 +1,23 @@
 package usecase
 
 import (
+	"encoding/json"
 	"fmt"
 	"log"
 	"strconv"
 
+	"github.com/lightlink/group-service/infrastructure/ws"
 	groupRepo "github.com/lightlink/group-service/internal/group/repository"
 	messageDTO "github.com/lightlink/group-service/internal/message/domain/dto"
 	"github.com/lightlink/group-service/internal/message/domain/entity"
 	messageRepo "github.com/lightlink/group-service/internal/message/repository"
 	notificationDTO "github.com/lightlink/group-service/internal/notification/domain/dto"
 	notificationRepo "github.com/lightlink/group-service/internal/notification/repository"
+)
+
+const (
+	HATE_MESSAGE_STATUS    = "hate"
+	NEUTRAL_MESSAGE_STATUS = "neutral"
 )
 
 type MessageUsecaseI interface {
@@ -24,6 +31,7 @@ type MessageUsecase struct {
 	groupRepo             groupRepo.GroupRepositoryI
 	notificationRepo      notificationRepo.NotificationRepositoryI
 	messageHateSpeechRepo messageRepo.MessageHateSpeechRepositoryI
+	messagingServer       ws.MessagingServer
 }
 
 func NewMessageUsecase(
@@ -31,18 +39,21 @@ func NewMessageUsecase(
 	notificationRepo notificationRepo.NotificationRepositoryI,
 	groupRepo groupRepo.GroupRepositoryI,
 	messageHateSpeechRepo messageRepo.MessageHateSpeechRepositoryI,
+	messagingServer ws.MessagingServer,
 ) *MessageUsecase {
 	return &MessageUsecase{
 		messageRepo:           messageRepo,
 		notificationRepo:      notificationRepo,
 		groupRepo:             groupRepo,
 		messageHateSpeechRepo: messageHateSpeechRepo,
+		messagingServer:       messagingServer,
 	}
 }
 
-func (uc *MessageUsecase) initiateHateSpeechCheck(messageID uint, content string) {
+func (uc *MessageUsecase) initiateHateSpeechCheck(messageID, groupID uint, content string) {
 	hateSpeechRequest := messageDTO.MessageHateSpeechRequest{
 		ID:      messageID,
+		GroupID: groupID,
 		Content: content,
 	}
 
@@ -87,13 +98,24 @@ func (uc *MessageUsecase) Create(createRequest *messageDTO.CreateMessageRequest)
 		return nil, err
 	}
 
+	messagePayload, err := json.Marshal(createdMessageEntity)
+	if err != nil {
+		return nil, err
+	}
+
 	go uc.sendIncomingMessageNotification(
 		createdMessageEntity.UserID,
 		createdMessageEntity.GroupID,
 		createdMessageEntity.Content,
 	)
 
-	go uc.initiateHateSpeechCheck(createdMessageEntity.ID, createdMessageEntity.Content)
+	go uc.initiateHateSpeechCheck(
+		createdMessageEntity.ID,
+		createdMessageEntity.GroupID,
+		createdMessageEntity.Content,
+	)
+
+	uc.messagingServer.PublishToGroup(createdMessageEntity.GroupID, messagePayload)
 
 	return createdMessageEntity, nil
 }
@@ -110,13 +132,16 @@ func (uc *MessageUsecase) GetByGroupID(groupID uint) ([]entity.Message, error) {
 func (uc *MessageUsecase) UpdateHateSpeechLabel(hateSpeechResponse messageDTO.MessageHateSpeechResponse) {
 	var newStatus string
 	if hateSpeechResponse.IsHateSpeech {
-		newStatus = "hate"
+		newStatus = HATE_MESSAGE_STATUS
 	} else {
-		newStatus = "neutral"
+		newStatus = NEUTRAL_MESSAGE_STATUS
 	}
 
 	err := uc.messageRepo.UpdateStatus(hateSpeechResponse.ID, newStatus)
 	if err != nil {
 		fmt.Printf("Failed to update status for message %d: %v\n", hateSpeechResponse.ID, err)
+		return
 	}
+
+	// uc.messagingServer.PublishToGroup()
 }

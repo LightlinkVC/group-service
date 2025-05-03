@@ -8,10 +8,12 @@ type CreateMessageRequest struct {
 
 type MessageHateSpeechRequest struct {
 	ID      uint   `json:"id"`
+	GroupID uint   `json:"group_id"`
 	Content string `json:"content"`
 }
 
 type MessageHateSpeechResponse struct {
 	ID           uint `json:"id"`
+	GroupID      uint `json:"group_id"`
 	IsHateSpeech bool `json:"is_hate_speech"`
 }

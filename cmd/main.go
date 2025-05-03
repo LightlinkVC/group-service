@@ -8,10 +8,10 @@ import (
 	"net/http"
 	"os"
 
-	"github.com/centrifugal/centrifuge"
 	"github.com/gorilla/mux"
 	_ "github.com/lib/pq"
 
+	"github.com/lightlink/group-service/infrastructure/ws/centrifugo"
 	grpcGroupDelivery "github.com/lightlink/group-service/internal/group/delivery/grpc"
 	httpGroupDelivery "github.com/lightlink/group-service/internal/group/delivery/http"
 	groupRepository "github.com/lightlink/group-service/internal/group/repository/postgres"
@@ -21,7 +21,6 @@ import (
 	messageHateSpeechRepository "github.com/lightlink/group-service/internal/message/repository/kafka"
 	messageRepository "github.com/lightlink/group-service/internal/message/repository/postgres"
 	messageUsecase "github.com/lightlink/group-service/internal/message/usecase"
-	"github.com/lightlink/group-service/internal/middleware"
 	notificationRepository "github.com/lightlink/group-service/internal/notification/repository/kafka"
 	proto "github.com/lightlink/group-service/protogen/group"
 	"google.golang.org/grpc"
@@ -63,10 +62,6 @@ func startGRPC() {
 	log.Fatal(grpcServer.Serve(listener))
 }
 
-func isValidGroupChannel(channel string) bool {
-	return len(channel) > 6 && channel[:6] == "group:"
-}
-
 func startHTTP() {
 	postgresConnect, err := connectToDB()
 	if err != nil {
@@ -78,27 +73,12 @@ func startHTTP() {
 		}
 	}()
 
-	node, err := centrifuge.New(centrifuge.Config{})
-	if err := node.Run(); err != nil {
-		panic(err)
-	}
+	centrifugoKey := os.Getenv("CENTRIFUGO_HTTP_API_KEY")
 
-	node.OnConnect(func(client *centrifuge.Client) {
-		client.OnSubscribe(func(e centrifuge.SubscribeEvent, cb centrifuge.SubscribeCallback) {
-			if !isValidGroupChannel(e.Channel) {
-				fmt.Println("Invalid channel: ", e.Channel)
-				cb(centrifuge.SubscribeReply{}, centrifuge.ErrorPermissionDenied)
-				return
-			}
-
-			cb(centrifuge.SubscribeReply{
-				Options: centrifuge.SubscribeOptions{
-					EmitPresence:  true,
-					EmitJoinLeave: true,
-				},
-			}, nil)
-		})
-	})
+	centrifugoClient := centrifugo.NewCentrifugoClient(
+		"http://centrifugo:8000",
+		centrifugoKey,
+	)
 
 	groupRepository := groupRepository.NewGroupPostgresRepository(postgresConnect)
 	messageRepository := messageRepository.NewMessagePostgresRepository(postgresConnect)
@@ -124,10 +104,11 @@ func startHTTP() {
 		notificationRepository,
 		groupRepository,
 		messageHateSpeechRepository,
+		centrifugoClient,
 	)
 
 	groupHandler := httpGroupDelivery.NewGroupHandler(groupUsecase)
-	messageHandler := httpMessageDelivery.NewMessageHandler(messageUsecase, node)
+	messageHandler := httpMessageDelivery.NewMessageHandler(messageUsecase)
 
 	messageFilterConsumer, err := kafkaMessageFilterDelivery.NewMessageFilterConsumer(
 		messageUsecase,
@@ -142,14 +123,6 @@ func startHTTP() {
 	go messageFilterConsumer.Receive()
 
 	router := mux.NewRouter()
-
-	/*TODO решить проблему с CORS*/
-	wsHandler := centrifuge.NewWebsocketHandler(node, centrifuge.WebsocketConfig{
-		CheckOrigin: func(r *http.Request) bool {
-			return true
-		},
-	})
-	router.Handle("/connection/websocket", middleware.ValidateAuthWS(wsHandler))
 
 	router.HandleFunc("/api/get-group-id/{friendID}", groupHandler.GetPersonalGroupID).Methods("GET")
 
