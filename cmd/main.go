@@ -27,106 +27,68 @@ import (
 )
 
 func main() {
-	// === Запускаем gRPC ===
-	go startGRPC()
+	db, err := connectToDB()
+	if err != nil {
+		log.Fatalf("Ошибка при подключении к БД: %v", err)
+	}
+	defer db.Close()
 
-	// === Запускаем HTTP ===
-	startHTTP()
+	centrifugoKey := os.Getenv("CENTRIFUGO_HTTP_API_KEY")
+	centrifugoClient := centrifugo.NewCentrifugoClient("http://centrifugo:8000", centrifugoKey)
+
+	// === Repositories ===
+	grpRepo := groupRepository.NewGroupPostgresRepository(db)
+	msgRepo := messageRepository.NewMessagePostgresRepository(db)
+	msgHateRepo, err := messageHateSpeechRepository.NewMessageHateSpeechRepository("kafka:29092", "input_hate_speech")
+	if err != nil {
+		log.Fatalf("Ошибка инициализации message hate speech repo: %v", err)
+	}
+	notifyRepo, err := notificationRepository.NewNotificationKafkaRepository("kafka:29092", "notifications", "http://schema_registry:9091")
+	if err != nil {
+		log.Fatalf("Ошибка инициализации notification repo: %v", err)
+	}
+
+	// === Usecases ===
+	grpUC := groupUsecase.NewGroupUsecase(grpRepo, notifyRepo)
+	msgUC := messageUsecase.NewMessageUsecase(msgRepo, notifyRepo, grpRepo, msgHateRepo, centrifugoClient)
+
+	// === Запуск gRPC сервера ===
+	go startGRPC(grpUC)
+
+	// === Запуск HTTP сервера ===
+	startHTTP(grpUC, msgUC)
 }
 
-func startGRPC() {
+func startGRPC(groupUsecase groupUsecase.GroupUsecaseI) {
 	listener, err := net.Listen("tcp", ":8084")
 	if err != nil {
 		log.Fatalf("Ошибка при поднятии gRPC listener'a: %v", err)
 	}
 
 	grpcServer := grpc.NewServer()
-
-	postgresConnect, err := connectToDB()
-	if err != nil {
-		log.Fatalf("Ошибка при подключении к БД: %v", err)
-	}
-	defer func() {
-		if err = postgresConnect.Close(); err != nil {
-			panic(err)
-		}
-	}()
-
-	groupRepository := groupRepository.NewGroupPostgresRepository(postgresConnect)
-	groupUsecase := groupUsecase.NewGroupUsecase(groupRepository)
 	groupService := grpcGroupDelivery.NewGroupService(groupUsecase)
-
 	proto.RegisterGroupServiceServer(grpcServer, groupService)
 
 	fmt.Println("gRPC сервер запущен на порту :8084")
 	log.Fatal(grpcServer.Serve(listener))
 }
 
-func startHTTP() {
-	postgresConnect, err := connectToDB()
-	if err != nil {
-		log.Fatalf("Ошибка при подключении к БД: %v", err)
-	}
-	defer func() {
-		if err = postgresConnect.Close(); err != nil {
-			panic(err)
-		}
-	}()
-
-	centrifugoKey := os.Getenv("CENTRIFUGO_HTTP_API_KEY")
-
-	centrifugoClient := centrifugo.NewCentrifugoClient(
-		"http://centrifugo:8000",
-		centrifugoKey,
-	)
-
-	groupRepository := groupRepository.NewGroupPostgresRepository(postgresConnect)
-	messageRepository := messageRepository.NewMessagePostgresRepository(postgresConnect)
-	messageHateSpeechRepository, err := messageHateSpeechRepository.NewMessageHateSpeechRepository(
-		"kafka:29092",
-		"input_hate_speech",
-	)
-	if err != nil {
-		panic(err)
-	}
-	notificationRepository, err := notificationRepository.NewNotificationKafkaRepository(
-		"kafka:29092",
-		"notifications",
-		"http://schema_registry:9091",
-	)
-	if err != nil {
-		panic(err)
-	}
-
-	groupUsecase := groupUsecase.NewGroupUsecase(groupRepository)
-	messageUsecase := messageUsecase.NewMessageUsecase(
-		messageRepository,
-		notificationRepository,
-		groupRepository,
-		messageHateSpeechRepository,
-		centrifugoClient,
-	)
-
+func startHTTP(groupUsecase groupUsecase.GroupUsecaseI, messageUsecase messageUsecase.MessageUsecaseI) {
 	groupHandler := httpGroupDelivery.NewGroupHandler(groupUsecase)
 	messageHandler := httpMessageDelivery.NewMessageHandler(messageUsecase)
 
 	messageFilterConsumer, err := kafkaMessageFilterDelivery.NewMessageFilterConsumer(
-		messageUsecase,
-		"kafka:29092",
-		"hate-speech-group",
-		"output_hate_speech",
+		messageUsecase, "kafka:29092", "hate-speech-group", "output_hate_speech",
 	)
 	if err != nil {
-		panic(err)
+		log.Fatalf("Ошибка запуска Kafka consumer: %v", err)
 	}
-
 	go messageFilterConsumer.Receive()
 
 	router := mux.NewRouter()
-
 	router.HandleFunc("/api/group/{groupID}/info", groupHandler.InfoHandler).Methods("GET")
 	router.HandleFunc("/api/get-group-id/{friendID}", groupHandler.GetPersonalGroupID).Methods("GET")
-
+	router.HandleFunc("/api/group/{groupID}/start-call", groupHandler.StartCall).Methods("POST")
 	router.HandleFunc("/api/messages/{groupID}", messageHandler.GetGroupMessages).Methods("GET")
 	router.HandleFunc("/api/messages", messageHandler.SendMessage).Methods("POST")
 
@@ -135,18 +97,13 @@ func startHTTP() {
 }
 
 func connectToDB() (*sql.DB, error) {
-	postgresDSN := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=disable",
+	dsn := fmt.Sprintf(
+		"host=%s port=%s user=%s password=%s dbname=%s sslmode=disable",
 		os.Getenv("POSTGRES_HOST"),
 		os.Getenv("POSTGRES_PORT"),
 		os.Getenv("POSTGRES_USER"),
 		os.Getenv("POSTGRES_PASSWORD"),
 		os.Getenv("POSTGRES_DB"),
 	)
-
-	db, err := sql.Open("postgres", postgresDSN)
-	if err != nil {
-		return nil, err
-	}
-
-	return db, nil
+	return sql.Open("postgres", dsn)
 }

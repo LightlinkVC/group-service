@@ -25,6 +25,18 @@ func NewGroupHandler(groupUsecase usecase.GroupUsecaseI) *GroupHandler {
 	}
 }
 
+func (h *GroupHandler) StartCall(w http.ResponseWriter, r *http.Request) {
+	groupIDString := mux.Vars(r)["groupID"]
+	userIDString := r.Header.Get("X-User-ID")
+
+	err := h.groupUC.StartCall(userIDString, groupIDString)
+	if err != nil {
+		fmt.Println("ERR: Error starting call")
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+}
+
 func generateUserToken(secret, userID, roomID string) (string, error) {
 	claims := jwt.MapClaims{
 		"sub": userID,
