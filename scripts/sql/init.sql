@@ -46,6 +46,7 @@ CREATE TABLE IF NOT EXISTS messages (
     group_id INTEGER NOT NULL,
     status_id INTEGER NOT NULL,
     content TEXT NOT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
     CONSTRAINT fk_message_user FOREIGN KEY (user_id, group_id) REFERENCES group_members(user_id, group_id),
     CONSTRAINT fk_message_group FOREIGN KEY (group_id) REFERENCES groups(id),
     CONSTRAINT fk_message_status FOREIGN KEY (status_id) REFERENCES message_statuses(id)

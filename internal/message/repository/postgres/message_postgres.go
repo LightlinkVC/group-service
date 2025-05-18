@@ -33,7 +33,7 @@ func (repo *MessagePostgresRepository) Create(messageEntity *entity.Message) (*e
 	}
 
 	err = repo.DB.QueryRow(`
-		SELECT m.id, m.user_id, m.group_id, ms.name, m.content
+		SELECT m.id, m.user_id, m.group_id, ms.name, m.content, m.created_at
 		FROM messages m
 		JOIN message_statuses ms ON m.status_id = ms.id
 		WHERE m.id = $1`,
@@ -44,6 +44,7 @@ func (repo *MessagePostgresRepository) Create(messageEntity *entity.Message) (*e
 		&createdMessageEntity.GroupID,
 		&createdMessageEntity.Status,
 		&createdMessageEntity.Content,
+		&createdMessageEntity.CreatedAt,
 	)
 	if err != nil {
 		fmt.Println("Parse created message error")
@@ -55,10 +56,11 @@ func (repo *MessagePostgresRepository) Create(messageEntity *entity.Message) (*e
 
 func (repo *MessagePostgresRepository) GetByGroupID(groupID uint) ([]entity.Message, error) {
 	rows, err := repo.DB.Query(
-		`SELECT m.id, m.user_id, m.group_id, ms.name, m.content
+		`SELECT m.id, m.user_id, m.group_id, ms.name, m.content, m.created_at
 		FROM messages m
 		JOIN message_statuses ms ON m.status_id = ms.id
-		WHERE m.group_id = $1`,
+		WHERE m.group_id = $1
+		ORDER BY m.created_at ASC`,
 		groupID,
 	)
 	if err != nil {
@@ -80,6 +82,7 @@ func (repo *MessagePostgresRepository) GetByGroupID(groupID uint) ([]entity.Mess
 			&currentGroupMessage.GroupID,
 			&currentGroupMessage.Status,
 			&currentGroupMessage.Content,
+			&currentGroupMessage.CreatedAt,
 		)
 		if err != nil {
 			fmt.Println("Failed to select messages")
