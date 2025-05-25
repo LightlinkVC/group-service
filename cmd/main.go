@@ -12,6 +12,7 @@ import (
 	_ "github.com/lib/pq"
 
 	"github.com/lightlink/group-service/infrastructure/ws/centrifugo"
+	fileRepository "github.com/lightlink/group-service/internal/file/repository/minio"
 	grpcGroupDelivery "github.com/lightlink/group-service/internal/group/delivery/grpc"
 	httpGroupDelivery "github.com/lightlink/group-service/internal/group/delivery/http"
 	groupRepository "github.com/lightlink/group-service/internal/group/repository/postgres"
@@ -39,6 +40,17 @@ func main() {
 	// === Repositories ===
 	grpRepo := groupRepository.NewGroupPostgresRepository(db)
 	msgRepo := messageRepository.NewMessagePostgresRepository(db)
+	fileRepo, err := fileRepository.NewFileRepository(
+		"group-service-minio:9000",
+		"minioadmin",
+		"minioadmin",
+		"message-files",
+		false,
+	)
+	if err != nil {
+		log.Fatalf("failed to initialize MinIO client: %v", err)
+	}
+
 	msgHateRepo, err := messageHateSpeechRepository.NewMessageHateSpeechRepository("kafka:29092", "input_hate_speech")
 	if err != nil {
 		log.Fatalf("Ошибка инициализации message hate speech repo: %v", err)
@@ -50,7 +62,7 @@ func main() {
 
 	// === Usecases ===
 	grpUC := groupUsecase.NewGroupUsecase(grpRepo, notifyRepo)
-	msgUC := messageUsecase.NewMessageUsecase(msgRepo, notifyRepo, grpRepo, msgHateRepo, centrifugoClient)
+	msgUC := messageUsecase.NewMessageUsecase(msgRepo, notifyRepo, grpRepo, fileRepo, msgHateRepo, centrifugoClient)
 
 	// === Запуск gRPC сервера ===
 	go startGRPC(grpUC)

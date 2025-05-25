@@ -4,8 +4,10 @@ import (
 	"fmt"
 	"log"
 	"strconv"
+	"time"
 
 	"github.com/lightlink/group-service/infrastructure/ws"
+	fileRepo "github.com/lightlink/group-service/internal/file/repository"
 	groupRepo "github.com/lightlink/group-service/internal/group/repository"
 	messageDTO "github.com/lightlink/group-service/internal/message/domain/dto"
 	"github.com/lightlink/group-service/internal/message/domain/entity"
@@ -28,6 +30,7 @@ type MessageUsecaseI interface {
 type MessageUsecase struct {
 	messageRepo           messageRepo.MessageRepositoryI
 	groupRepo             groupRepo.GroupRepositoryI
+	fileRepo              fileRepo.FileRepositoryI
 	notificationRepo      notificationRepo.NotificationRepositoryI
 	messageHateSpeechRepo messageRepo.MessageHateSpeechRepositoryI
 	messagingServer       ws.MessagingServer
@@ -37,6 +40,7 @@ func NewMessageUsecase(
 	messageRepo messageRepo.MessageRepositoryI,
 	notificationRepo notificationRepo.NotificationRepositoryI,
 	groupRepo groupRepo.GroupRepositoryI,
+	fileRepo fileRepo.FileRepositoryI,
 	messageHateSpeechRepo messageRepo.MessageHateSpeechRepositoryI,
 	messagingServer ws.MessagingServer,
 ) *MessageUsecase {
@@ -44,6 +48,7 @@ func NewMessageUsecase(
 		messageRepo:           messageRepo,
 		notificationRepo:      notificationRepo,
 		groupRepo:             groupRepo,
+		fileRepo:              fileRepo,
 		messageHateSpeechRepo: messageHateSpeechRepo,
 		messagingServer:       messagingServer,
 	}
@@ -90,11 +95,61 @@ func (uc *MessageUsecase) Create(createRequest *messageDTO.CreateMessageRequest)
 		UserID:  createRequest.UserID,
 		GroupID: createRequest.GroupID,
 		Content: createRequest.Content,
+		Files:   make([]entity.File, 0, len(createRequest.Files)),
+	}
+
+	for _, fileHeader := range createRequest.Files {
+		file, err := fileHeader.Open()
+		if err != nil {
+			log.Printf("Failed to open file: %v", err)
+			continue
+		}
+		defer file.Close()
+
+		objectName := fmt.Sprintf("%d_%s", time.Now().UnixNano(), fileHeader.Filename)
+
+		err = uc.fileRepo.UploadObject(
+			objectName,
+			file,
+			fileHeader.Size,
+			fileHeader.Header.Get("Content-Type"),
+		)
+		if err != nil {
+			log.Printf("Failed to upload file: %v", err)
+			continue
+		}
+
+		url, err := uc.fileRepo.GetPresignedURL(objectName, 24*time.Hour)
+		if err != nil {
+			log.Printf("Failed to generate URL for file: %v", err)
+			continue
+		}
+
+		messageEntity.Files = append(messageEntity.Files, entity.File{
+			ObjectName:   objectName,
+			OriginalName: fileHeader.Filename,
+			ContentType:  fileHeader.Header.Get("Content-Type"),
+			Size:         fileHeader.Size,
+			URL:          url,
+		})
 	}
 
 	createdMessageEntity, err := uc.messageRepo.Create(&messageEntity)
 	if err != nil {
 		return nil, err
+	}
+
+	filesWithURLs := make([]messageDTO.FileInfo, 0, len(createdMessageEntity.Files))
+	for _, file := range createdMessageEntity.Files {
+		url, err := uc.fileRepo.GetPresignedURL(file.ObjectName, 24*time.Hour)
+		if err == nil {
+			filesWithURLs = append(filesWithURLs, messageDTO.FileInfo{
+				Name: file.OriginalName,
+				URL:  url,
+				Type: file.ContentType,
+				Size: file.Size,
+			})
+		}
 	}
 
 	messagePayload := messageDTO.IncomingMessagePayload{
@@ -103,6 +158,7 @@ func (uc *MessageUsecase) Create(createRequest *messageDTO.CreateMessageRequest)
 		GroupID: createdMessageEntity.GroupID,
 		Status:  createdMessageEntity.Status,
 		Content: createRequest.Content,
+		Files:   filesWithURLs,
 	}
 
 	go uc.sendIncomingMessageNotification(
@@ -132,6 +188,18 @@ func (uc *MessageUsecase) GetByGroupID(groupID uint) ([]entity.Message, error) {
 	messages, err := uc.messageRepo.GetByGroupID(groupID)
 	if err != nil {
 		return nil, err
+	}
+
+	for i := range messages {
+		for j := range messages[i].Files {
+			url, err := uc.fileRepo.GetPresignedURL(
+				messages[i].Files[j].ObjectName,
+				24*time.Hour,
+			)
+			if err == nil {
+				messages[i].Files[j].URL = url
+			}
+		}
 	}
 
 	return messages, nil

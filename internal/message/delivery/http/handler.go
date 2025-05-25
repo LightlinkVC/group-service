@@ -3,7 +3,6 @@ package http
 import (
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"strconv"
 
@@ -23,39 +22,35 @@ func NewMessageHandler(messageUC usecase.MessageUsecaseI) *MessageHandler {
 }
 
 func (h *MessageHandler) SendMessage(w http.ResponseWriter, r *http.Request) {
-	body, err := io.ReadAll(r.Body)
-	if err != nil {
-		/*Handle*/
-		fmt.Println("Failed to read request body")
-		return
-	}
-	defer func() {
-		if err = r.Body.Close(); err != nil {
-			/*Handle*/
-			fmt.Println("Failed to close request body")
-		}
-	}()
-
-	createMessageRequest := &dto.CreateMessageRequest{}
-	err = json.Unmarshal(body, createMessageRequest)
-	if err != nil {
-		/*Handle*/
-		fmt.Println("failed unmarshal")
+	if err := r.ParseMultipartForm(32 << 20); err != nil {
+		http.Error(w, "Failed to parse multipart form", http.StatusBadRequest)
 		return
 	}
 
-	userIDString := r.Header.Get("X-User-ID")
-	userID64, err := strconv.ParseUint(userIDString, 10, 32)
+	userIDStr := r.Header.Get("X-User-ID")
+	userID64, err := strconv.ParseUint(userIDStr, 10, 32)
 	if err != nil {
-		/*Handle*/
-		fmt.Println(err)
+		http.Error(w, "Invalid user ID", http.StatusBadRequest)
 		return
 	}
-
 	userID := uint(userID64)
-	createMessageRequest.UserID = userID
 
-	_, err = h.messageUC.Create(createMessageRequest)
+	groupIDStr := r.FormValue("group_id")
+	groupID64, _ := strconv.ParseUint(groupIDStr, 10, 32)
+	groupID := uint(groupID64)
+
+	content := r.FormValue("content")
+
+	files := r.MultipartForm.File["files"]
+
+	createMessageRequest := dto.CreateMessageRequest{
+		UserID:  userID,
+		GroupID: groupID,
+		Content: content,
+		Files:   files,
+	}
+
+	message, err := h.messageUC.Create(&createMessageRequest)
 	if err != nil {
 		/*Handle*/
 		w.WriteHeader(http.StatusBadRequest)
@@ -63,7 +58,17 @@ func (h *MessageHandler) SendMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	response, err := json.Marshal(message)
+	if err != nil {
+		/*Handle*/
+		fmt.Println(err)
+		return
+	}
+
 	w.WriteHeader(http.StatusOK)
+	if _, err = w.Write(response); err != nil {
+		fmt.Println("Failed to write create message response")
+	}
 }
 
 func (h *MessageHandler) GetGroupMessages(w http.ResponseWriter, r *http.Request) {
@@ -79,7 +84,7 @@ func (h *MessageHandler) GetGroupMessages(w http.ResponseWriter, r *http.Request
 
 	messages, err := h.messageUC.GetByGroupID(groupID)
 	if err != nil {
-		/*Handle*/
+		w.WriteHeader(http.StatusBadRequest)
 		fmt.Println(err)
 		return
 	}
