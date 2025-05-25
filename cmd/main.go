@@ -99,6 +99,8 @@ func startHTTP(groupUsecase groupUsecase.GroupUsecaseI, messageUsecase messageUs
 
 	router := mux.NewRouter()
 	router.HandleFunc("/api/group/{groupID}/info", groupHandler.InfoHandler).Methods("GET")
+	router.HandleFunc("/api/groups", groupHandler.GetGroups).Methods("GET")
+	router.HandleFunc("/api/groups", groupHandler.CreateGroup).Methods("POST")
 	router.HandleFunc("/api/get-group-id/{friendID}", groupHandler.GetPersonalGroupID).Methods("GET")
 	router.HandleFunc("/api/group/{groupID}/start-call", groupHandler.StartCall).Methods("POST")
 	router.HandleFunc("/api/messages/{groupID}", messageHandler.GetGroupMessages).Methods("GET")

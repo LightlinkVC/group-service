@@ -66,6 +66,50 @@ func (repo *GroupPostgresRepository) GetMemberIDsByGroupID(groupID uint) ([]uint
 	return memberIDs, nil
 }
 
+func (repo *GroupPostgresRepository) GetGroupsByUserID(userID uint) ([]model.Group, error) {
+	query := `
+        SELECT 
+            g.id,
+            g.name,
+            g.creator_id,
+            g.type_id
+        FROM groups g
+        JOIN group_types gt ON g.type_id = gt.id
+        JOIN group_members gm ON g.id = gm.group_id
+        WHERE gm.user_id = $1 
+            AND gt.name = 'group'`
+
+	rows, err := repo.DB.Query(query, userID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to execute query: %w", err)
+	}
+	defer rows.Close()
+
+	var groups []model.Group
+	for rows.Next() {
+		var group model.Group
+
+		err := rows.Scan(
+			&group.ID,
+			&group.Name,
+			&group.CreatorID,
+			&group.TypeID,
+			// &group.MemberCount, // TODO
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan group row: %w", err)
+		}
+
+		groups = append(groups, group)
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, fmt.Errorf("error during rows iteration: %w", err)
+	}
+
+	return groups, nil
+}
+
 func (repo *GroupPostgresRepository) Create(groupEntity *entity.Group, groupMembers []entity.GroupMember) (*model.Group, error) {
 	createdGroupModel := &model.Group{}
 	var groupTypeID uint

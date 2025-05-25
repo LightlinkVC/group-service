@@ -12,6 +12,7 @@ import (
 
 type GroupUsecaseI interface {
 	Create(groupEntity *entity.Group, groupMembers []entity.GroupMember) error
+	GetGroupsByUserID(userID uint) ([]entity.Group, error)
 	GetPersonalGroupID(user1ID uint, user2ID uint) (uint, error)
 	StartCall(initiatorIDString, groupIDString string) error
 }
@@ -84,6 +85,27 @@ func (uc *GroupUsecase) Create(groupEntity *entity.Group, groupMembers []entity.
 	}
 
 	return nil
+}
+
+func (uc *GroupUsecase) GetGroupsByUserID(userID uint) ([]entity.Group, error) {
+	groupModels, err := uc.groupRepo.GetGroupsByUserID(userID)
+	if err != nil {
+		return nil, err
+	}
+
+	groupEntities := []entity.Group{}
+	for _, groupModel := range groupModels {
+		groupEntity := entity.Group{
+			ID:        groupModel.ID,
+			Name:      groupModel.Name,
+			CreatorID: groupModel.CreatorID,
+			TypeName:  "group", // TODO
+		}
+
+		groupEntities = append(groupEntities, groupEntity)
+	}
+
+	return groupEntities, nil
 }
 
 func (uc *GroupUsecase) GetPersonalGroupID(user1ID uint, user2ID uint) (uint, error) {
