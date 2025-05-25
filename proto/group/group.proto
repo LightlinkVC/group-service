@@ -1,0 +1,19 @@
+syntax = "proto3";
+
+package group;
+
+option go_package = "github.com/lightlink/group-service/protogen/group";
+
+message CreatePersonalGroupRequest {
+    uint32 user1_id = 1;
+    uint32 user2_id = 2;
+}
+
+message CreatePersonalGroupResponse {
+    bool status = 1;
+}
+
+// protoc --go_opt=paths=source_relative --go-grpc_opt=paths=source_relative --proto_path=proto --go_out=protogen --go-grpc_out=protogen proto/group/group.proto
+service GroupService {
+    rpc CreatePersonalGroup (CreatePersonalGroupRequest) returns (CreatePersonalGroupResponse);
+}
