@@ -53,6 +53,103 @@ func generateUserToken(secret, userID, roomID string) (string, error) {
 	return token.SignedString([]byte(secret))
 }
 
+func (h *GroupHandler) CreateGroup(w http.ResponseWriter, r *http.Request) {
+	userIDString := r.Header.Get("X-User-ID")
+	userID, err := strconv.ParseUint(userIDString, 10, 32)
+	if err != nil {
+		http.Error(w, "Invalid user ID", http.StatusBadRequest)
+		return
+	}
+
+	var req dto.CreateGroupRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	if req.Name == "" {
+		http.Error(w, "Group name is required", http.StatusBadRequest)
+		return
+	}
+
+	if len(req.Members) == 0 {
+		http.Error(w, "Group must have at least one member", http.StatusBadRequest)
+		return
+	}
+
+	groupEntity := &entity.Group{
+		Name:      req.Name,
+		CreatorID: uint(userID),
+		TypeName:  "group",
+	}
+
+	var groupMembers []entity.GroupMember
+
+	groupMembers = append(groupMembers, entity.GroupMember{
+		UserID: uint(userID),
+		Role:   "admin",
+	})
+
+	for _, m := range req.Members {
+		groupMembers = append(groupMembers, entity.GroupMember{
+			UserID: m.UserID,
+			Role:   m.Role,
+		})
+	}
+
+	if err := h.groupUC.Create(groupEntity, groupMembers); err != nil {
+		http.Error(w, "Failed to create group: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"message": "Group created successfully",
+		"groupID": groupEntity.ID,
+	})
+}
+
+func (h *GroupHandler) GetGroups(w http.ResponseWriter, r *http.Request) {
+	userIDString := r.Header.Get("X-User-ID")
+	userID64, err := strconv.ParseUint(userIDString, 10, 32)
+	if err != nil {
+		/*Handle*/
+		fmt.Println(err)
+		return
+	}
+
+	userID := uint(userID64)
+
+	groups, err := h.groupUC.GetGroupsByUserID(userID)
+	if err != nil {
+		/*Handle*/
+		w.WriteHeader(http.StatusBadRequest)
+		fmt.Println(err)
+		return
+	}
+
+	groupDTOs := []dto.GetGroupResponse{}
+	for _, group := range groups {
+		groupDTO := dto.GetGroupResponse{
+			GroupID:   group.ID,
+			GroupName: group.Name,
+		}
+		groupDTOs = append(groupDTOs, groupDTO)
+	}
+
+	response, err := json.Marshal(groupDTOs)
+	if err != nil {
+		/*Handle*/
+		fmt.Println(err)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	if _, err = w.Write(response); err != nil {
+		fmt.Println("Failed to write groups response")
+	}
+}
+
 func (h *GroupHandler) InfoHandler(w http.ResponseWriter, r *http.Request) {
 	fmt.Println("Handling incoming info request")
 	userIDString := r.Header.Get("X-User-ID")
