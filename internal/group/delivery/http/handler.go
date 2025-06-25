@@ -104,7 +104,7 @@ func (h *GroupHandler) CreateGroup(w http.ResponseWriter, r *http.Request) {
 
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"message": "Group created successfully",
+		"name":    groupEntity.Name,
 		"groupID": groupEntity.ID,
 	})
 }
